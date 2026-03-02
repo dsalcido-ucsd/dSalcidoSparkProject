@@ -49,22 +49,14 @@
 | Partition | `shared` (single-node) |
 | Account | `uci157` |
 | Nodes | 1 |
-| CPUs | 8 |
-| Memory | 64 GB |
-| Time Limit | 1 hr 15 min |
+| CPUs | 16 |
+| Memory | 128 GB |
+| Time Limit | 12 hr (720 min) |
 | Job Launcher | Galyleo (Jupyter) |
 
 ### SparkSession Configuration
 
-I derived executor settings from the allocated resources using the formula:
-
-```
-Executor instances = Total Cores − 1 = 8 − 1 = 7
-Driver memory     = 8 GB  (1 core reserved for the driver)
-Executor memory   = (Total Memory − Driver Memory) / Executor Instances
-                  = (64 GB − 8 GB) / 7
-                  = 8 GB per executor
-```
+In `local[N]` mode the driver IS the executor, so only `spark.driver.memory` matters. For MS3, 96 GB is allocated to the driver, leaving headroom for the OS and JVM overhead on the 128 GB node.
 
 **MS2 (Exploration):**
 ```python
@@ -86,14 +78,15 @@ spark = (
 spark = (
     SparkSession.builder
     .appName("EB-NeRD MS3 Preprocessing & Modeling")
-    .master("local[7]")
-    .config("spark.driver.memory", "48g")           # local mode: driver IS the executor
-    .config("spark.driver.maxResultSize", "8g")
-    .config("spark.sql.shuffle.partitions", "400")  # finer partitions for 440M-row table
+    .master("local[15]")
+    .config("spark.driver.memory", "96g")
+    .config("spark.driver.maxResultSize", "16g")
+    .config("spark.sql.shuffle.partitions", "800")
+    .config("spark.local.dir", "/expanse/lustre/scratch/<user>/temp_project/spark_local")
     .config("spark.sql.parquet.enableVectorizedReader", "true")
     .config("spark.sql.adaptive.enabled", "true")
     .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
-    .config("spark.sql.autoBroadcastJoinThreshold", "-1")  # disable broadcast joins
+    .config("spark.sql.autoBroadcastJoinThreshold", "-1")
     .config("spark.checkpoint.compress", "true")
     .config("spark.memory.fraction", "0.8")
     .config("spark.memory.storageFraction", "0.3")
@@ -103,11 +96,12 @@ spark = (
 
 **Why these settings (MS3):**
 
-- **48 GB driver memory** — in `local[*]` mode the driver IS the executor, so `spark.executor.memory` has no effect. The full 48 GB is needed to fit the 440M-row exploded candidate table, pipeline transforms, and three tree ensemble models in memory.
-- **400 shuffle partitions** — larger table means more parallelism needed to keep per-task heap footprint manageable.
-- **Disabled broadcast joins** — joining 440M-row tables with broadcast would OOM; forcing sort-merge join is safer.
+- **96 GB driver memory** — in `local[*]` mode the driver IS the executor, so `spark.executor.memory` has no effect. 96 GB fits the 440M-row exploded candidate table, pipeline transforms, and three tree ensemble models in memory on the 128 GB node.
+- **800 shuffle partitions** — 15 threads over a ~100M-row downsampled table; finer partitions keep per-task heap footprint manageable.
+- **Lustre scratch for `spark.local.dir`** — shuffle spill and checkpoint data go to `/expanse/lustre/scratch/` to avoid filling the home directory quota.
+- **Disabled broadcast joins** — joining large tables with broadcast would OOM; forcing sort-merge join is safer.
 - **Checkpointing** — breaks long lineage chains before the pipeline fit and after transforms to prevent re-computation OOM.
-- **Vectorized parquet reader** uses Arrow for faster columnar I/O since the whole dataset is parquet.
+- **Vectorized parquet reader** — uses Arrow for faster columnar I/O since the whole dataset is parquet.
 
 ## Abstract
 
