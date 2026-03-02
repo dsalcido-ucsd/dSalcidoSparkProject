@@ -19,17 +19,25 @@
 
 ```
 ├── README.md
-├── MS2_Data_Exploration.ipynb     # PySpark data exploration
-└── expanse_setup.sh               # Expanse environment setup
+├── MS2_Data_Exploration.ipynb          # Milestone 2: PySpark data exploration
+├── MS3_Preprocessing_and_Modeling.ipynb # Milestone 3: Full preprocessing pipeline + 3 distributed models
+└── expanse_setup.sh                    # Expanse environment setup
 ```
+
+## Notebooks
+
+| Notebook | Branch | Description |
+|---|---|---|
+| [MS2_Data_Exploration.ipynb](MS2_Data_Exploration.ipynb) | `Milestone2` | PySpark schema inspection, null analysis, impression/click distributions, article EDA |
+| [MS3_Preprocessing_and_Modeling.ipynb](MS3_Preprocessing_and_Modeling.ipynb) | `Milestone3` | End-to-end Spark MLlib preprocessing pipeline, Random Forest + 2 GBT models, fitting analysis |
 
 ## Milestones
 
-| MS | Deliverable | Status |
-|----|-------------|--------|
-| MS2 | Data Exploration (this milestone) | ✅ |
-| MS3 | Preprocessing & Feature Engineering | Planned |
-| MS4 | Modeling & Evaluation | Planned |
+| MS | Deliverable | Branch | Status |
+|----|-------------|--------|--------|
+| MS2 | Data Exploration | `Milestone2` | ✅ Complete |
+| MS3 | Preprocessing & First Distributed Model | `Milestone3` | ✅ Complete |
+| MS4 | Advanced Modeling (XGBoost + Neural) | TBD | Planned |
 
 ## SDSC Expanse Environment Setup
 
@@ -58,6 +66,7 @@ Executor memory   = (Total Memory − Driver Memory) / Executor Instances
                   = 8 GB per executor
 ```
 
+**MS2 (Exploration):**
 ```python
 spark = (
     SparkSession.builder
@@ -72,12 +81,32 @@ spark = (
 )
 ```
 
-**Why these settings:**
+**MS3 (Preprocessing & Modeling):**
+```python
+spark = (
+    SparkSession.builder
+    .appName("EB-NeRD MS3 Preprocessing & Modeling")
+    .master("local[7]")
+    .config("spark.driver.memory", "48g")           # local mode: driver IS the executor
+    .config("spark.driver.maxResultSize", "8g")
+    .config("spark.sql.shuffle.partitions", "400")  # finer partitions for 440M-row table
+    .config("spark.sql.parquet.enableVectorizedReader", "true")
+    .config("spark.sql.adaptive.enabled", "true")
+    .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
+    .config("spark.sql.autoBroadcastJoinThreshold", "-1")  # disable broadcast joins
+    .config("spark.checkpoint.compress", "true")
+    .config("spark.memory.fraction", "0.8")
+    .config("spark.memory.storageFraction", "0.3")
+    .getOrCreate()
+)
+```
 
-- **1 core for the driver** so it can coordinate tasks and collect results for plotting without competing with executors.
-- **8 GB driver memory** is enough for the small aggregated DataFrames I collect for matplotlib; the heavy work stays distributed.
-- **7 executors × 8 GB = 56 GB** uses the remaining memory evenly, which matters for the shuffle-heavy joins and explode operations on ~38M impressions.
-- **200 shuffle partitions** is a reasonable middle ground for this data size. I'll tune it up in MS3 when the exploded training table hits ~440M rows.
+**Why these settings (MS3):**
+
+- **48 GB driver memory** — in `local[*]` mode the driver IS the executor, so `spark.executor.memory` has no effect. The full 48 GB is needed to fit the 440M-row exploded candidate table, pipeline transforms, and three tree ensemble models in memory.
+- **400 shuffle partitions** — larger table means more parallelism needed to keep per-task heap footprint manageable.
+- **Disabled broadcast joins** — joining 440M-row tables with broadcast would OOM; forcing sort-merge join is safer.
+- **Checkpointing** — breaks long lineage chains before the pipeline fit and after transforms to prevent re-computation OOM.
 - **Vectorized parquet reader** uses Arrow for faster columnar I/O since the whole dataset is parquet.
 
 ## Abstract
