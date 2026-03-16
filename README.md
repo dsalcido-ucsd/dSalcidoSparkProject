@@ -20,7 +20,7 @@ Key findings:
 - GBT tuned on full features achieves **val AUC-ROC 0.6749**, the best result across all four models
 - `rolling_popularity_24h` (24h rolling impression count) dominates all models with **0.32 feature importance**; trending articles beat content quality signals
 - 87.8% of test items are cold (no prior engagement); cold articles show **~0.02 lower AUC** than warm articles
-- PCA at 95% explained variance preserves most label signal; the GBT-PCA model achieves comparable val AUC with a smaller, decorrelated feature space
+- PCA at 95% explained variance (k=41 of 54 features) preserves most test-set signal (AUC-ROC 0.7047 vs. 0.7281 baseline) but generalizes less well to the validation period (0.6067 vs. 0.6749)
 - PC1 captures the "article engagement" axis (inviews, pageviews, rolling popularity); PC2 captures "user engagement depth" (history length, read time, scroll depth). Cold articles cluster at the low-PC1 extreme, confirming the cold-start problem is a feature-space separability issue
 
 ---
@@ -97,9 +97,9 @@ Feature engineering  (article age, log engagement, rolling 24h CTR, user history
         ▼
 Spark MLlib Pipeline  (StringIndexer → OHE → Imputer → VectorAssembler → StandardScaler)
         │
-        ├── MS3 ──► RF / GBT on full ~30-dim features
+        ├── MS3 ──► RF / GBT on full 54-dim features
         │
-        └── MS4 ──► PCA (k at 95% variance) ──► GBT on PCA-k features
+        └── MS4 ──► PCA (k=41 at 95% variance) ──► GBT on PCA-41 features
 ```
 
 ### Features
@@ -131,9 +131,7 @@ Spark MLlib Pipeline  (StringIndexer → OHE → Imputer → VectorAssembler →
 | RF (50 trees, depth 8) | 0.7123 | 0.7164 | 0.6538 | −0.0041 | −0.0626 |
 | GBT default (20 rounds, lr=0.1) | 0.7200 | 0.7226 | 0.6378 | −0.0026 | −0.0848 |
 | **GBT tuned (50 rounds, lr=0.05)** | **0.7375** | **0.7281** | **0.6749** | +0.0094 | −0.0532 |
-| GBT on PCA features (95% var) | see MS4 | see MS4 | see MS4 | see MS4 | see MS4 |
-
-> GBT-PCA results are computed at runtime in `MS4_Dimensionality_Reduction_and_Modeling.ipynb` since the exact k depends on the dataset's actual eigenvalue distribution.
+| GBT on PCA-41 features (95% var) | 0.7127 | 0.7047 | 0.6067 | +0.0080 | −0.0980 |
 
 ### Cold-Start Cohort Breakdown (GBT Tuned, Test Set)
 
@@ -163,7 +161,7 @@ Spark MLlib Pipeline  (StringIndexer → OHE → Imputer → VectorAssembler →
 | PC1 interpretation | "Article engagement" axis (`rolling_popularity_24h`, `log_total_inviews`, `log_total_pageviews`) |
 | PC2 interpretation | "User engagement depth" axis (`user_history_length`, `user_avg_read_time_hist`, `read_time`) |
 | Cold article cluster | Cold articles concentrate at the negative end of PC1, confirming cold-start is a low-engagement separability problem |
-| Information compression | 95% variance captured in k components; GBT-PCA achieves comparable AUC with a smaller input |
+| Information compression | 95% variance captured in k=41 of 54 components (24% reduction); GBT-PCA test AUC-ROC 0.7047 vs. 0.7281 tuned baseline |
 
 ---
 
@@ -173,9 +171,9 @@ All four models sit near the underfitting end of the bias-variance spectrum, wit
 
 - **RF** and **GBT default**: test AUC is slightly above train AUC (−0.004, −0.003), a sign of mild underfitting; both ensembles are well-regularized
 - **GBT tuned**: +0.009 train/test gap, which is healthy; the slow learning rate over 50 rounds keeps the model from memorizing training noise
-- **GBT-PCA**: expected to follow the same pattern; the decorrelated PCA input reduces split redundancy and slightly lowers variance compared to the full-feature GBT
+- **GBT-PCA**: +0.008 train/test gap, similar to the other models; however, the test-to-val drop is the largest at −0.098, suggesting that PCA discards some of the features that help generalize across time periods
 
-The **test-to-val drop (0.05 to 0.08 AUC)** across all models is not overfitting. It is temporal distribution shift: the validation set covers June 1 to June 8, about a week after the test period ends. GBT default is hit hardest (-0.085), while GBT tuned holds up best (-0.053) because its lower learning rate produces more generalizable splits.
+The **test-to-val drop** across all models is temporal distribution shift, not overfitting: the validation set covers June 1 to June 8, about a week after the test period ends. GBT tuned holds up best (−0.053), GBT default is hit hardest (−0.085), and GBT-PCA shows the steepest drop (−0.098), likely because PCA compresses away low-variance temporal and categorical signals that aid cross-period generalization.
 
 ---
 
@@ -193,7 +191,7 @@ GBT tuned achieves the best generalization (val AUC-ROC 0.6749). Click predictio
 
 ### Model 2 (MS4, PCA + GBT)
 
-PCA reveals that the feature space is organized around two interpretable axes: article engagement (PC1) and user engagement depth (PC2). Compressing to 95% explained variance preserves nearly all label signal, and the GBT model trained on those components achieves comparable val AUC to GBT tuned. The decorrelated input also reduces split redundancy in the GBT trees.
+PCA reveals that the feature space is organized around two interpretable axes: article engagement (PC1) and user engagement depth (PC2). Compressing to 95% explained variance (k=41 of 54 features) preserves most of the test-set signal (AUC-ROC 0.7047 vs. 0.7281 tuned baseline), but the val AUC drops more steeply (0.6067 vs. 0.6749), indicating that the 5% of discarded variance contains temporal and categorical signals that help generalize across time periods. Notably, the cold/warm AUC gap nearly vanishes under PCA (cold 0.6800 vs. warm 0.6780), suggesting that decorrelation reduces the model's dependence on engagement-history features that only warm articles have.
 
 **Improvements for MS4 model:**
 - Supervised dimensionality reduction (LDA) to maximize class separability rather than variance
