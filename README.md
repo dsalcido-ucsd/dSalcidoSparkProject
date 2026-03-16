@@ -2,7 +2,7 @@
 
 **DSC 232R: Big Data Technologies with Spark, Final Project**
 
-This repository contains the complete final submission for a large-scale news recommendation project built on the EB-NeRD dataset. The work is organized as a sequence of milestone notebooks, but this README presents the project as one coherent report. It integrates the exploration work from MS2, the preprocessing and first model family from MS3, and the dimensionality-reduction experiment from MS4 into a single narrative.
+This repository contains the complete final submission for a large-scale news recommendation project built on the EB-NeRD dataset. The work is organized in three notebooks, but this README presents it as one coherent report. It integrates the exploration work from MS2, the preprocessing and first model family from MS3, and the dimensionality-reduction experiment from MS4 into a single narrative.
 
 ## 1. Introduction to the Project
 
@@ -10,7 +10,7 @@ I chose this project because news recommendation is a practical machine learning
 
 This problem is also interesting because it combines several hard challenges at once. Reader behavior changes quickly over time. Article popularity shifts from hour to hour. Many articles are brand new and have little or no interaction history. That cold-start setting makes the problem harder because the model cannot rely only on prior clicks and instead has to learn from article metadata, user history, and short-term session signals.
 
-The project genuinely required big data and distributed computing. The `ebnerd_large` dataset contains about 37.9 million impression logs, more than 1.1 million users, about 125 thousand articles, and more than 213 million historical interactions. After exploding impression rows into candidate article rows, the working table grows to roughly 440 million rows before negative downsampling. At that scale, standard single-machine workflows become impractical.
+The project required big data and distributed computing. The `ebnerd_large` dataset contains about 37.9 million impression logs, more than 1.1 million users, about 125 thousand articles, and more than 213 million historical interactions. After exploding impression rows into candidate article rows, the working table grows to roughly 440 million rows before negative downsampling. At that scale, standard single-machine workflows become impractical.
 
 Spark made the project feasible because it could:
 
@@ -272,8 +272,8 @@ There are several limitations worth stating clearly.
 - The evaluation focuses on binary classification metrics rather than a full ranking objective.
 - PCA is unsupervised, so it optimizes for variance retention rather than class separation.
 - Temporal shift remains a real challenge across all models.
-- The report figures live in notebook outputs rather than separate image files in the repository.
-- The MS2 and MS3 visuals are still easiest to view in the notebooks themselves, while the MS4 visuals are now embedded directly in this README.
+- MS2 visuals are still easiest to view in the notebook itself.
+- The main MS3 and MS4 visuals are now embedded directly in this README.
 
 Overall, the results look believable. They are not too good to trust, they expose meaningful failure modes, and they line up with what we would expect in a recommendation problem driven heavily by short-term engagement.
 
