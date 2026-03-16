@@ -24,55 +24,55 @@ Without Spark, I would have had to shrink the dataset or simplify the features s
 
 ## 2. Figures
 
-The main figures for the project are stored as executed outputs inside the notebooks. The repository does not currently include separate PNG assets, so this section serves as the figure guide for the written report.
+The figures follow the same arc as the project itself. The story starts with exploration, moves into the first distributed model family, and ends with the PCA-based second model and its prediction behavior.
 
-| Figure | Description | Location |
-|---|---|---|
-| Figure 1 | Data exploration visuals covering schema structure, missingness, impression patterns, click imbalance, and article metadata distributions | [MS2_Data_Exploration.ipynb](MS2_Data_Exploration.ipynb) |
-| Figure 2 | Model diagnostics from the first distributed model family, including performance comparisons and feature-importance views | [MS3_Preprocessing_and_Modeling.ipynb](MS3_Preprocessing_and_Modeling.ipynb) |
-| Figure 3 | PCA explained variance plot showing cumulative variance and the 90%, 95%, and 99% thresholds | [MS4_Dimensionality_Reduction_and_Modeling.ipynb](MS4_Dimensionality_Reduction_and_Modeling.ipynb) |
-| Figure 4 | PC1 and PC2 loading plots used to interpret the principal components | [MS4_Dimensionality_Reduction_and_Modeling.ipynb](MS4_Dimensionality_Reduction_and_Modeling.ipynb) |
-| Figure 5 | Two-dimensional PCA projection separating click labels and cold versus warm article cohorts | [MS4_Dimensionality_Reduction_and_Modeling.ipynb](MS4_Dimensionality_Reduction_and_Modeling.ipynb) |
-| Figure 6 | AUC comparison chart for RF, default GBT, tuned GBT, and GBT on PCA features | [MS4_Dimensionality_Reduction_and_Modeling.ipynb](MS4_Dimensionality_Reduction_and_Modeling.ipynb) |
-| Figure 7 | Prediction analysis plots showing probability distributions and false-positive / false-negative rates by cohort | [MS4_Dimensionality_Reduction_and_Modeling.ipynb](MS4_Dimensionality_Reduction_and_Modeling.ipynb) |
+The exploration stage in [MS2_Data_Exploration.ipynb](MS2_Data_Exploration.ipynb) established the basic shape of the problem. Those visuals show the scale of the data, the strong click imbalance, the structure of article metadata, and the relationship between article age and engagement. Together, they motivate the rest of the pipeline: the dataset is large, the target is imbalanced, and cold-start articles behave differently enough that the model cannot rely only on historical popularity. The MS2 notebook is still the best place to view those exploration figures because it does not currently contain saved PNG outputs that can be extracted cleanly into the README.
 
-**Figure legends**
-
-- **Figure 1. Data exploration.** These visuals established the size of the dataset, the imbalance in click labels, and the availability of article and behavior fields that could support cold-start modeling.
-- **Figure 2. First-model diagnostics.** These plots summarize how the full-feature distributed models compare and which engineered features dominate the strongest model.
-- **Figure 3. Explained variance.** The PCA scree and cumulative variance curves show that 41 components capture 95.91% of total variance from the 54-dimensional feature vector.
-- **Figure 4. Component loadings.** The loading plots reveal that PC1 is mostly an article-engagement axis, while PC2 reflects user-depth and session-behavior structure.
-- **Figure 5. PCA projection.** The two-dimensional projection shows how cold articles cluster toward the lower-engagement side of the reduced feature space.
-- **Figure 6. Model comparison.** The bar chart places the final PCA-based model alongside the MS3 baselines on AUC-ROC and AUC-PR.
-- **Figure 7. Prediction behavior.** These plots show how the final model distributes confidence and where errors concentrate across cold and warm cohorts.
-
-The two MS3 visualizations and five MS4 visualizations below were exported from the saved notebook outputs and embedded directly in this report. The MS2 exploration visuals are still easiest to view in the notebook because that notebook does not currently contain saved PNG outputs.
+The next step in the story is the first distributed model family from MS3. These figures summarize how the full-feature models performed and what the tuned GBT learned from the engineered feature space.
 
 ### Figure 2A. Model 1 Performance Comparison
+
+This plot compares RF, default GBT, and tuned GBT across train, test, and validation splits. It shows that the tuned GBT is the strongest full-feature model overall and that the main challenge is not extreme overfitting, but generalization across time.
 
 ![MS3 model comparison](assets/figures/ms3_model_comparison.png)
 
 ### Figure 2B. Tuned GBT Feature Importance
 
+This figure shows that recent engagement signals dominate the tuned GBT model. In particular, `rolling_popularity_24h` stands out as the strongest feature, which supports the idea that short-term article momentum is central to click prediction.
+
 ![MS3 feature importance](assets/figures/ms3_feature_importance.png)
 
+MS4 then shifts from pure predictive performance to feature-space structure. The first question is how much of the original 54-dimensional representation can be compressed while retaining most of the variation.
+
 ### Figure 3. PCA Explained Variance
+
+The scree plot and cumulative variance curve show that 41 components retain 95.91% of the total variance. This provides the basis for selecting the reduced representation used in the final PCA-based model.
 
 ![PCA explained variance](assets/figures/pca_explained_variance.png)
 
 ### Figure 4. PCA Component Loadings
 
+These loading plots make the reduced space interpretable. PC1 is mainly an article-engagement axis, while PC2 captures a mix of user-depth and session-behavior information.
+
 ![PCA loadings](assets/figures/pca_loadings.png)
 
 ### Figure 5. PCA Two-Dimensional Projection
 
+This projection gives a visual summary of the cold-start problem. Cold articles cluster toward the lower-engagement side of the reduced space, which helps explain why models that depend heavily on interaction history struggle with new content.
+
 ![PCA 2D projection](assets/figures/pca_2d_projection.png)
 
-### Figure 6. Model Performance Comparison
+Once the reduced representation is defined, the next question is how the second model compares with the MS3 baselines.
+
+### Figure 6. Final Model Comparison
+
+This comparison places the PCA-based GBT alongside the three full-feature baselines. It shows that the PCA model remains competitive on the test split, but loses more ground on validation, suggesting that some lower-variance signals still matter for temporal generalization.
 
 ![Model comparison](assets/figures/model_comparison.png)
 
 ### Figure 7. Prediction Analysis
+
+The final figure looks beyond summary metrics and shows how the PCA-based model behaves at the prediction level. The probability distributions and cohort-level error rates help explain where the model is confident, where it fails, and how those failures differ between cold and warm articles.
 
 ![Prediction analysis](assets/figures/prediction_analysis.png)
 
