@@ -1,267 +1,276 @@
-# EB-NeRD Click Prediction & Cold-Start Analysis
+# EB-NeRD Click Prediction and Cold-Start Analysis
 
 **DSC 232R: Big Data Technologies with Spark, Final Project**
 
----
+This repository contains the complete final submission for a large-scale news recommendation project built on the EB-NeRD dataset. The work is organized as a sequence of milestone notebooks, but this README presents the project as one coherent report. It integrates the exploration work from MS2, the preprocessing and first model family from MS3, and the dimensionality-reduction experiment from MS4 into a single narrative.
 
-## Project Question
+## 1. Introduction to the Project
 
-> How well can we predict and rank article clicks from impression data, and what is the cold-start degradation when articles have no interaction history? Can dimensionality reduction via PCA recover or improve performance relative to a full-feature baseline?
+I chose this project because news recommendation is a practical machine learning problem with clear real-world importance. Every day, digital platforms decide which stories readers see first. A good predictive model can help surface more relevant articles, reduce how often unhelpful content is shown, and improve how quickly timely information reaches the right audience. That makes click prediction a useful case study in both machine learning and modern data systems.
 
----
+This problem is also interesting because it combines several hard challenges at once. Reader behavior changes quickly over time. Article popularity shifts from hour to hour. Many articles are brand new and have little or no interaction history. That cold-start setting makes the problem harder because the model cannot rely only on prior clicks and instead has to learn from article metadata, user history, and short-term session signals.
 
-## Abstract
+The project genuinely required big data and distributed computing. The `ebnerd_large` dataset contains about 37.9 million impression logs, more than 1.1 million users, about 125 thousand articles, and more than 213 million historical interactions. After exploding impression rows into candidate article rows, the working table grows to roughly 440 million rows before negative downsampling. At that scale, standard single-machine workflows become impractical.
 
-This project builds an end-to-end large-scale pipeline for news recommendation click-through-rate (CTR) prediction using the EB-NeRD dataset, with a focus on the cold-start problem for newly published content. Using PySpark on SDSC Expanse (16 CPUs, 128 GB), we transform ~38M impression logs into hundreds of millions of (user, article) candidate pairs, engineer time-aware features to prevent label leakage, and train four distributed tree ensemble models across two milestones.
+Spark made the project feasible because it could:
 
-**Milestone 3** covers full preprocessing and three Spark MLlib models (Random Forest + 2 GBT variants). **Milestone 4** applies PCA dimensionality reduction to the feature space, investigates explained variance and component structure, and trains a GBT model on the reduced representation, comparing it to the full-feature baseline.
+- explode in-view article arrays into hundreds of millions of candidate rows
+- compute rolling 24-hour engagement features across large temporal partitions
+- join several large parquet tables without turning the pipeline into a memory bottleneck
+- rebuild a preprocessing pipeline over tens of millions of examples
+- train PCA and tree-based models at realistic scale
 
-Key findings:
-- GBT tuned on full features achieves **val AUC-ROC 0.6749**, the best result across all four models
-- `rolling_popularity_24h` (24h rolling impression count) dominates all models with **0.32 feature importance**; trending articles beat content quality signals
-- 87.8% of test items are cold (no prior engagement); cold articles show **~0.02 lower AUC** than warm articles
-- PCA at 95% explained variance (k=41 of 54 features) preserves most test-set signal (AUC-ROC 0.7047 vs. 0.7281 baseline) but generalizes less well to the validation period (0.6067 vs. 0.6749)
-- PC1 captures the "article engagement" axis (inviews, pageviews, rolling popularity); PC2 captures "user engagement depth" (history length, read time, scroll depth). Cold articles cluster at the low-PC1 extreme, confirming the cold-start problem is a feature-space separability issue
+Without Spark, I would have had to shrink the dataset or simplify the features so much that the project would no longer reflect the real structure of large-scale recommendation data.
 
----
+## 2. Figures
 
-## Dataset
+The main figures for the project are stored as executed outputs inside the notebooks. The repository does not currently include separate PNG assets, so this section serves as the figure guide for the written report.
 
-**EB-NeRD (Ekstra Bladet News Recommendation Dataset)** is a large-scale public dataset from the RecSys Challenge 2024.
-
-| Property | Value |
-|---|---|
-| Source | [https://recsys.eb.dk/dataset/](https://recsys.eb.dk/dataset/) |
-| Bundle used | `ebnerd_large` (6 weeks, Apr 27 to Jun 8, 2023) |
-| Impression logs | ~37.9M |
-| Users | ~1.1M |
-| Articles | ~125K |
-| Historical interactions | ~213M |
-| Exploded candidate table | ~440M rows (before downsampling) |
-
-This is well above the 10 GB minimum requirement. The full exploded impression-candidate table reaches tens to hundreds of GB on disk.
-
----
-
-## Repository Structure
-
-```
-├── README.md
-├── MS2_Data_Exploration.ipynb               # Milestone 2: PySpark EDA
-├── MS3_Preprocessing_and_Modeling.ipynb     # Milestone 3: Full pipeline + 3 distributed models
-├── MS4_Dimensionality_Reduction_and_Modeling.ipynb  # Milestone 4: PCA + GBT on reduced features
-└── expanse_setup.sh                         # Expanse environment setup script
-```
-
----
-
-## Notebooks
-
-| Notebook | Description |
-|---|---|
-| [MS2_Data_Exploration.ipynb](MS2_Data_Exploration.ipynb) | PySpark schema inspection, null analysis, impression/click distributions, article EDA |
-| [MS3_Preprocessing_and_Modeling.ipynb](MS3_Preprocessing_and_Modeling.ipynb) | End-to-end Spark MLlib preprocessing pipeline (imputation, OHE, scaling), Random Forest baseline + 2 GBT models, fitting analysis, cold-start cohort breakdown |
-| [MS4_Dimensionality_Reduction_and_Modeling.ipynb](MS4_Dimensionality_Reduction_and_Modeling.ipynb) | PCA dimensionality reduction (full-rank eigenvalue analysis, explained variance, component interpretation, 2D projection), GBT on PCA features, predictions analysis (TP/TN/FP/FN by cold/warm cohort), full model comparison |
-
----
-
-## Milestones
-
-| MS | Deliverable | Branch | Status |
-|----|-------------|--------|--------|
-| MS2 | Data Exploration | `Milestone2` | ✅ Complete |
-| MS3 | Preprocessing & First Distributed Model | `Milestone3` | ✅ Complete |
-| MS4 | Dimensionality Reduction & Second Model | `Milestone4` | ✅ Complete |
-
----
-
-## Methods
-
-### Data Pipeline
-
-```
-Raw parquet (behaviors + articles + history)
-        │
-        ▼
-Explode inview arrays → (impression, candidate) rows     [~440M rows]
-        │
-        ▼
-Negative downsampling  (npratio=4, keep all positives)   [~100M rows]
-        │
-        ▼
-Temporal split  (train=first 80% by time, test=last 20%, val=validation/ folder)
-        │
-        ▼
-Feature engineering  (article age, log engagement, rolling 24h CTR, user history)
-        │
-        ▼
-Spark MLlib Pipeline  (StringIndexer → OHE → Imputer → VectorAssembler → StandardScaler)
-        │
-        ├── MS3 ──► RF / GBT on full 54-dim features
-        │
-        └── MS4 ──► PCA (k=41 at 95% variance) ──► GBT on PCA-41 features
-```
-
-### Features
-
-| Group | Features | Notes |
+| Figure | Description | Location |
 |---|---|---|
-| **Engagement** (warm-article) | `rolling_popularity_24h`, `rolling_ctr_24h`, `log_total_inviews`, `log_total_pageviews`, `total_read_time` | Zero for cold articles; dominant signal |
-| **Article content** (cold-safe) | `category_str` (OHE), `sentiment_score`, `sentiment_label`, `title/body/subtitle_word_count`, `n_topics`, `n_entities`, `premium_flag`, article age | Available immediately on publication |
-| **User** | `user_history_length`, `user_avg_read_time_hist`, `is_subscriber`, `is_sso_user`, `device_type` | From history table |
-| **Session** | `impression_hour`, `impression_weekday`, `read_time`, `scroll_percentage` | Session-level signals |
-| **Cold flag** | `is_cold_article` (age ≤ 24h or 0 inviews) | Cohort identifier for analysis |
+| Figure 1 | Data exploration visuals covering schema structure, missingness, impression patterns, click imbalance, and article metadata distributions | [MS2_Data_Exploration.ipynb](MS2_Data_Exploration.ipynb) |
+| Figure 2 | Model diagnostics from the first distributed model family, including performance comparisons and feature-importance views | [MS3_Preprocessing_and_Modeling.ipynb](MS3_Preprocessing_and_Modeling.ipynb) |
+| Figure 3 | PCA explained variance plot showing cumulative variance and the 90%, 95%, and 99% thresholds | [MS4_Dimensionality_Reduction_and_Modeling.ipynb](MS4_Dimensionality_Reduction_and_Modeling.ipynb) |
+| Figure 4 | PC1 and PC2 loading plots used to interpret the principal components | [MS4_Dimensionality_Reduction_and_Modeling.ipynb](MS4_Dimensionality_Reduction_and_Modeling.ipynb) |
+| Figure 5 | Two-dimensional PCA projection separating click labels and cold versus warm article cohorts | [MS4_Dimensionality_Reduction_and_Modeling.ipynb](MS4_Dimensionality_Reduction_and_Modeling.ipynb) |
+| Figure 6 | AUC comparison chart for RF, default GBT, tuned GBT, and GBT on PCA features | [MS4_Dimensionality_Reduction_and_Modeling.ipynb](MS4_Dimensionality_Reduction_and_Modeling.ipynb) |
+| Figure 7 | Prediction analysis plots showing probability distributions and false-positive / false-negative rates by cohort | [MS4_Dimensionality_Reduction_and_Modeling.ipynb](MS4_Dimensionality_Reduction_and_Modeling.ipynb) |
 
-### Temporal Splits
+**Figure legends**
 
-| Split | Source | Approx. period | Used for |
-|---|---|---|---|
-| train | `train/` parquet, first 80% by time | Apr 27 to about May 31 | Model fitting |
-| test | `train/` parquet, last 20% by time | Late May | Evaluation |
-| val | `validation/` parquet | Jun 1 to Jun 8 | Final generalization check |
+- **Figure 1. Data exploration.** These visuals established the size of the dataset, the imbalance in click labels, and the availability of article and behavior fields that could support cold-start modeling.
+- **Figure 2. First-model diagnostics.** These plots summarize how the full-feature distributed models compare and which engineered features dominate the strongest model.
+- **Figure 3. Explained variance.** The PCA scree and cumulative variance curves show that 41 components capture 95.91% of total variance from the 54-dimensional feature vector.
+- **Figure 4. Component loadings.** The loading plots reveal that PC1 is mostly an article-engagement axis, while PC2 reflects user-depth and session-behavior structure.
+- **Figure 5. PCA projection.** The two-dimensional projection shows how cold articles cluster toward the lower-engagement side of the reduced feature space.
+- **Figure 6. Model comparison.** The bar chart places the final PCA-based model alongside the MS3 baselines on AUC-ROC and AUC-PR.
+- **Figure 7. Prediction behavior.** These plots show how the final model distributes confidence and where errors concentrate across cold and warm cohorts.
 
----
+## 3. Methods
 
-## Results
+This section summarizes the methods in the same order they were carried out during the project.
 
-### Model Performance Summary
+### 3.1 Data Exploration
 
-| Model | Train AUC-ROC | Test AUC-ROC | Val AUC-ROC | Train→Test | Test→Val |
-|---|---|---|---|---|---|
-| RF (50 trees, depth 8) | 0.7123 | 0.7164 | 0.6538 | −0.0041 | −0.0626 |
-| GBT default (20 rounds, lr=0.1) | 0.7200 | 0.7226 | 0.6378 | −0.0026 | −0.0848 |
-| **GBT tuned (50 rounds, lr=0.05)** | **0.7375** | **0.7281** | **0.6749** | +0.0094 | −0.0532 |
-| GBT on PCA-41 features (95% var) | 0.7127 | 0.7047 | 0.6067 | +0.0080 | −0.0980 |
+The project began with exploratory analysis in [MS2_Data_Exploration.ipynb](MS2_Data_Exploration.ipynb). The purpose of this stage was to understand the scale of the dataset, inspect schemas, identify null-heavy fields, measure class imbalance, and see which article and behavior fields might be useful for modeling.
 
-### Cold-Start Cohort Breakdown (GBT Tuned, Test Set)
+Main exploration steps:
+
+- loaded parquet tables for behaviors, history, and articles with PySpark
+- inspected schemas and representative records
+- measured impression counts, click distributions, and article metadata patterns
+- examined missing values and candidate fields for feature engineering
+
+Representative code:
+
+```python
+df_behaviors = spark.read.parquet(behaviors_path)
+df_articles = spark.read.parquet(articles_path)
+
+df_behaviors.select("impression_id", "user_id", "article_ids_inview").show(5, truncate=False)
+df_articles.select("article_id", "category_str", "sentiment_label").show(5, truncate=False)
+```
+
+### 3.2 Preprocessing with Spark
+
+The preprocessing pipeline was built in [MS3_Preprocessing_and_Modeling.ipynb](MS3_Preprocessing_and_Modeling.ipynb) and reused in the final model notebook. The pipeline was designed to be time-aware so that no future information leaked backward into training features.
+
+Main preprocessing steps:
+
+- exploded each impression into candidate article rows
+- applied negative downsampling with `npratio = 4` while preserving all positives
+- split the training behavior data temporally into train and test subsets
+- created rolling 24-hour CTR and popularity features from historical activity only
+- joined article metadata, user-history summaries, session signals, and a cold-start indicator
+- fit a Spark MLlib pipeline using `StringIndexer`, `OneHotEncoder`, `Imputer`, `VectorAssembler`, and `StandardScaler`
+
+Representative code:
+
+```python
+preprocessing_pipeline = Pipeline(stages=[
+    StringIndexer(inputCols=index_cols, outputCols=index_out_cols, handleInvalid="keep"),
+    OneHotEncoder(inputCols=ohe_in_cols, outputCols=ohe_out_cols, handleInvalid="keep"),
+    Imputer(inputCols=num_cols, outputCols=num_cols),
+    VectorAssembler(inputCols=assembler_inputs, outputCol="assembled", handleInvalid="keep"),
+    StandardScaler(inputCol="assembled", outputCol="features", withMean=False, withStd=True),
+])
+```
+
+### 3.3 Model 1: First Distributed Model
+
+The first modeling stage used the full engineered feature space and was implemented in [MS3_Preprocessing_and_Modeling.ipynb](MS3_Preprocessing_and_Modeling.ipynb). Three distributed tree models were trained and compared.
+
+Models trained:
+
+- Random Forest with 50 trees and maximum depth 8
+- default Gradient-Boosted Trees
+- tuned Gradient-Boosted Trees with `maxIter=50`, `maxDepth=7`, `stepSize=0.05`, `subsamplingRate=0.7`, `featureSubsetStrategy="sqrt"`, and `minInstancesPerNode=5`
+
+Representative code:
+
+```python
+gbt_tuned = GBTClassifier(
+    labelCol="label",
+    featuresCol="features",
+    maxIter=50,
+    maxDepth=7,
+    stepSize=0.05,
+    subsamplingRate=0.7,
+    featureSubsetStrategy="sqrt",
+    minInstancesPerNode=5,
+    seed=42,
+)
+```
+
+### 3.4 Model 2: PCA + Supervised Model
+
+The final model was developed in [MS4_Dimensionality_Reduction_and_Modeling.ipynb](MS4_Dimensionality_Reduction_and_Modeling.ipynb). This notebook reused the MS3 preprocessing pipeline, cleaned NaN values inside feature vectors before PCA, fit PCA on the training split only, selected a 95% explained-variance cutoff, and then trained a second GBT model on the reduced features.
+
+Main steps:
+
+- rebuilt train, test, and validation feature tables with the saved MS3 pipeline
+- replaced NaN values inside feature vectors before PCA
+- fit full-rank PCA to inspect the variance spectrum
+- selected `k = 41`, which captured 95.91% of the variance from the 54-dimensional feature vector
+- trained GBT on `pca_features` using the same hyperparameters as the tuned full-feature model
+
+Representative code:
+
+```python
+pca_model = PCA(k=41, inputCol="features", outputCol="pca_features")
+pca_fitted = pca_model.fit(df_train_prep)
+
+gbt_pca = GBTClassifier(
+    labelCol="label",
+    featuresCol="pca_features",
+    maxIter=50,
+    maxDepth=7,
+    stepSize=0.05,
+    subsamplingRate=0.7,
+    featureSubsetStrategy="sqrt",
+    minInstancesPerNode=5,
+    seed=42,
+)
+```
+
+### 3.5 Execution Environment
+
+All large-scale experiments were run on SDSC Expanse using one 16 CPU, 128 GB node with PySpark `local[15]`, 96 GB driver memory, 800 shuffle partitions, scratch-backed local storage, disabled broadcast joins, and checkpointing to control lineage depth.
+
+## 4. Results
+
+This section reports the outputs of the methods without interpretation.
+
+### 4.1 Data Exploration Results
+
+- dataset bundle used: `ebnerd_large`
+- impression logs: about 37.9 million
+- users: about 1.1 million
+- articles: about 125 thousand
+- historical interactions: about 213 million
+- exploded candidate table: about 440 million rows before downsampling
+
+The exploration stage also showed strong label imbalance and confirmed that article age and recent interaction signals would likely matter for prediction.
+
+### 4.2 Preprocessing Results
+
+- negative downsampling preserved all positives and sampled negatives within impression groups at a 4:1 ratio
+- temporal splitting used the first 80% of the timeline for training and the last 20% for testing
+- the final standardized full-feature vector had 54 dimensions
+- the cold-start cohort was defined as articles with age less than or equal to 24 hours or zero total inviews
+
+### 4.3 Model 1 Results
+
+| Model | Train AUC-ROC | Test AUC-ROC | Val AUC-ROC | Train AUC-PR | Test AUC-PR | Val AUC-PR |
+|---|---|---|---|---|---|---|
+| RF (50 trees, depth 8) | 0.7123 | 0.7164 | 0.6538 | 0.2621 | 0.2649 | 0.2803 |
+| GBT default (20 rounds, lr=0.1) | 0.7200 | 0.7226 | 0.6378 | 0.2698 | 0.2712 | 0.2709 |
+| GBT tuned (50 rounds, lr=0.05) | 0.7375 | 0.7281 | 0.6749 | 0.2901 | 0.2876 | 0.2984 |
+
+Cold-start breakdown for the tuned GBT on the test split:
 
 | Cohort | N | AUC-ROC |
 |---|---|---|
-| Warm articles (age > 24h, inviews > 0) | 2,838,845 | 0.7129 |
-| Cold articles (age ≤ 24h or 0 inviews) | 20,801,887 | 0.6930 |
+| Warm articles | 2,838,845 | 0.7129 |
+| Cold articles | 20,801,887 | 0.6930 |
 
-87.8% of test rows are cold articles. The 0.02 AUC gap comes from cold articles having zero `rolling_popularity_24h`, which is the most important feature.
+### 4.4 Model 2 Results
 
-### Top Feature Importances (GBT Tuned)
+PCA summary:
 
-| Rank | Feature | Importance |
+| Metric | Value |
+|---|---|
+| Full feature dimension | 54 |
+| Full-rank PCA components recovered | 53 |
+| 90% variance threshold | 36 |
+| 95% variance threshold | 41 |
+| 99% variance threshold | 46 |
+| Selected k | 41 |
+| Variance captured at k=41 | 95.91% |
+| Compression ratio | 54 to 41 |
+
+Final GBT-PCA results:
+
+| Model | Train AUC-ROC | Test AUC-ROC | Val AUC-ROC | Train AUC-PR | Test AUC-PR | Val AUC-PR |
+|---|---|---|---|---|---|---|
+| GBT on PCA-41 features | 0.7127 | 0.7047 | 0.6067 | 0.3581 | 0.3343 | 0.2488 |
+
+Cold-start breakdown for GBT-PCA on the test split:
+
+| Cohort | N | AUC-ROC |
 |---|---|---|
-| 1 | `rolling_popularity_24h` | 0.32 |
-| 2 | `user_history_length` | 0.068 |
-| 3 | `log_total_inviews` | 0.097 |
-| 4 | `log_article_age_hours` | 0.091 |
-| 5 | `log_total_pageviews` | 0.063 |
-| 6 | `total_read_time` | 0.062 |
-| 7 | `sentiment_score` | 0.046 |
+| Warm articles | 2,838,845 | 0.6780 |
+| Cold articles | 20,801,887 | 0.6800 |
 
-### PCA Analysis (MS4)
+The final notebook also includes confusion-matrix summaries, sample predictions, probability histograms, explained-variance plots, PCA loading plots, and false-positive / false-negative rate comparisons by cohort.
 
-| Finding | Detail |
-|---|---|
-| PC1 interpretation | "Article engagement" axis (`rolling_popularity_24h`, `log_total_inviews`, `log_total_pageviews`) |
-| PC2 interpretation | "User engagement depth" axis (`user_history_length`, `user_avg_read_time_hist`, `read_time`) |
-| Cold article cluster | Cold articles concentrate at the negative end of PC1, confirming cold-start is a low-engagement separability problem |
-| Information compression | 95% variance captured in k=41 of 54 components (24% reduction); GBT-PCA test AUC-ROC 0.7047 vs. 0.7281 tuned baseline |
+## 5. Discussion
 
----
+The project progressed in a way that felt honest to the data. MS2 made it clear that the challenge was not just training a classifier. The harder part was building a defensible pipeline at the right scale and preserving temporal logic so that the results meant something. Once the candidate table reached hundreds of millions of rows, engineering decisions and scientific decisions became tightly linked.
 
-## Fitting Analysis
+The strongest result from the first model family was that recent engagement matters a lot. In the full-feature models, `rolling_popularity_24h` emerged as the most important feature by a wide margin. That is believable in a real news environment. Readers respond strongly to current relevance, visibility, and momentum, so it makes sense that short-term popularity carries major predictive value.
 
-All four models sit near the underfitting end of the bias-variance spectrum, with near-zero train/test gaps:
+The cold-start result is also believable. The tuned GBT produced the best validation performance overall, but cold articles still trailed warm ones on the test split. That matches the structure of the problem. New articles simply have less behavioral evidence behind them, so the model has to fall back on weaker signals such as category, sentiment, text-derived counts, and user-history summaries.
 
-- **RF** and **GBT default**: test AUC is slightly above train AUC (−0.004, −0.003), a sign of mild underfitting; both ensembles are well-regularized
-- **GBT tuned**: +0.009 train/test gap, which is healthy; the slow learning rate over 50 rounds keeps the model from memorizing training noise
-- **GBT-PCA**: +0.008 train/test gap, similar to the other models; however, the test-to-val drop is the largest at −0.098, suggesting that PCA discards some of the features that help generalize across time periods
+The final model was useful because it revealed a real tradeoff rather than a superficial improvement. On the test split, GBT-PCA stayed reasonably close to the tuned full-feature baseline, which suggests that PCA preserved the strongest high-variance structure in the feature space. On validation, however, the drop was much steeper. That result is important because it suggests the compressed space lost lower-variance signals that still helped with generalization across time. In this case, PCA made the feature space cleaner and more interpretable, but it did not produce the strongest final predictor.
 
-The **test-to-val drop** across all models is temporal distribution shift, not overfitting: the validation set covers June 1 to June 8, about a week after the test period ends. GBT tuned holds up best (−0.053), GBT default is hit hardest (−0.085), and GBT-PCA shows the steepest drop (−0.098), likely because PCA compresses away low-variance temporal and categorical signals that aid cross-period generalization.
+One especially interesting outcome is that PCA almost removed the cold-versus-warm AUC gap. That does not mean the PCA model was better overall. Instead, it suggests that the reduced representation leaned less heavily on the engagement-history signals that mainly benefit warm articles. In practical terms, the model became more even across cohorts while also becoming weaker in total discrimination.
 
----
+There are several limitations worth stating clearly.
 
-## Conclusion
+- The project uses engineered metadata and interaction summaries rather than dense semantic embeddings.
+- The evaluation focuses on binary classification metrics rather than a full ranking objective.
+- PCA is unsupervised, so it optimizes for variance retention rather than class separation.
+- Temporal shift remains a real challenge across all models.
+- The report figures live in notebook outputs rather than separate image files in the repository.
 
-### Model 1 (MS3)
+Overall, the results look believable. They are not too good to trust, they expose meaningful failure modes, and they line up with what we would expect in a recommendation problem driven heavily by short-term engagement.
 
-GBT tuned achieves the best generalization (val AUC-ROC 0.6749). Click prediction is dominated by recency and momentum: `rolling_popularity_24h` alone accounts for 32% of predictive power. The cold-start gap (87.8% of impressions are cold, ~0.02 AUC disadvantage) is a feature-availability problem, not a modeling capacity problem. Cold articles simply have no engagement signals to draw on.
+## 6. Conclusion
 
-**Improvements for MS3 models:**
-- Add 768-dim contrastive/RoBERTa article embeddings for cold-start semantic signal
-- Shorter rolling windows (1h, 6h) to capture in-session virality
-- Per-user category affinity vectors (instead of scalar history length)
-- Rolling-window training to reduce temporal distribution shift at inference
+This project showed that large-scale click prediction is as much a data-engineering problem as a modeling problem. The strongest model was still the tuned GBT on the full 54-dimensional feature set, with validation AUC-ROC of 0.6749. The PCA-based final model was still valuable because it exposed the structure of the feature space, gave a clearer picture of the cold-start geometry, and showed an important tradeoff between compactness, interpretability, and generalization.
 
-### Model 2 (MS4, PCA + GBT)
+The main thing I learned about big-data processing is that distributed computing changes what kinds of questions you can ask. Spark made it possible to preserve temporal logic, compute rolling engagement features correctly, and train models on a realistic candidate table rather than a drastically simplified sample. That changed both the ambition and the credibility of the project.
 
-PCA reveals that the feature space is organized around two interpretable axes: article engagement (PC1) and user engagement depth (PC2). Compressing to 95% explained variance (k=41 of 54 features) preserves most of the test-set signal (AUC-ROC 0.7047 vs. 0.7281 tuned baseline), but the val AUC drops more steeply (0.6067 vs. 0.6749), indicating that the 5% of discarded variance contains temporal and categorical signals that help generalize across time periods. Notably, the cold/warm AUC gap nearly vanishes under PCA (cold 0.6800 vs. warm 0.6780), suggesting that decorrelation reduces the model's dependence on engagement-history features that only warm articles have.
+With more time and resources, I would explore three directions first:
 
-**Improvements for MS4 model:**
-- Supervised dimensionality reduction (LDA) to maximize class separability rather than variance
-- Sparse PCA for more interpretable, feature-selective components
-- Higher k (99% variance) to retain rare category OHE signal
-- PCA as preprocessing for a two-tower neural network to bring in dense article embeddings
+1. add semantic article embeddings to improve cold-start performance
+2. evaluate ranking metrics and recommendation-style objectives rather than only binary classification metrics
+3. test supervised dimensionality reduction or hybrid models that preserve rare but useful category signals
 
----
+The broader lesson is that infrastructure matters. Better compute and better data pipelines did not just make the code run faster. They made it possible to study the recommendation problem in a more realistic and more scientifically useful way.
 
-## SDSC Expanse Environment Setup
+## 7. Statement of Collaboration
 
-### Cluster Configuration
+Name: David Salcido  
+Title: Sole Project Author  
+Contribution: Designed the project, carried out the exploration, built the Spark preprocessing pipeline, trained and evaluated both modeling stages, interpreted the results, wrote the notebooks, and prepared the final report independently.
 
-| Resource | Value |
-|---|---|
-| Cluster | SDSC Expanse |
-| Partition | `shared` (single-node) |
-| Account | `uci157` |
-| Nodes | 1 |
-| CPUs | 16 |
-| Memory | 128 GB |
-| Time Limit | 12 hr (720 min) |
-| Job Launcher | Galyleo (Jupyter) |
+## Repository Contents
 
-### SparkSession Configuration
+- [MS2_Data_Exploration.ipynb](MS2_Data_Exploration.ipynb): exploratory analysis of the EB-NeRD dataset
+- [MS3_Preprocessing_and_Modeling.ipynb](MS3_Preprocessing_and_Modeling.ipynb): Spark preprocessing pipeline and the first distributed model family
+- [MS4_Dimensionality_Reduction_and_Modeling.ipynb](MS4_Dimensionality_Reduction_and_Modeling.ipynb): PCA analysis, second model, and prediction diagnostics
+- [expanse_setup.sh](expanse_setup.sh): SDSC Expanse setup notes
 
-In `local[N]` mode the driver is also the executor, so only `spark.driver.memory` matters. 96 GB is allocated to the driver, leaving headroom for OS and JVM overhead on the 128 GB node.
-
-**MS2 (Exploration):**
-```python
-spark = (
-    SparkSession.builder
-    .appName("EB-NeRD Data Exploration")
-    .master("local[7]")
-    .config("spark.driver.memory", "8g")
-    .config("spark.executor.memory", "8g")
-    .config("spark.executor.instances", "7")
-    .config("spark.sql.shuffle.partitions", 200)
-    .config("spark.sql.parquet.enableVectorizedReader", "true")
-    .getOrCreate()
-)
-```
-
-**MS3 & MS4 (Preprocessing & Modeling):**
-```python
-spark = (
-    SparkSession.builder
-    .appName("EB-NeRD MS3/MS4 Preprocessing & Modeling")
-    .master("local[15]")
-    .config("spark.driver.memory", "96g")
-    .config("spark.driver.maxResultSize", "16g")
-    .config("spark.sql.shuffle.partitions", "800")
-    .config("spark.local.dir", "/expanse/lustre/scratch/<user>/temp_project/spark_local")
-    .config("spark.sql.parquet.enableVectorizedReader", "true")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
-    .config("spark.sql.autoBroadcastJoinThreshold", "-1")
-    .config("spark.checkpoint.compress", "true")
-    .config("spark.memory.fraction", "0.8")
-    .config("spark.memory.storageFraction", "0.3")
-    .getOrCreate()
-)
-```
-
-**Why these settings:**
-
-- **96 GB driver memory**: in `local[*]` mode the driver is the executor, so `spark.executor.memory` has no effect. 96 GB is enough to hold the 440M-row exploded candidate table, pipeline transforms, PCA computation, and GBT models on the 128 GB node.
-- **800 shuffle partitions**: with 15 threads over a ~100M-row table, finer partitions keep per-task heap usage manageable.
-- **Lustre scratch for `spark.local.dir`**: shuffle spill and checkpoint data go to `/expanse/lustre/scratch/` to avoid filling the home directory quota.
-- **Disabled broadcast joins**: joining large tables via broadcast would run out of memory; sort-merge join is used instead.
-- **Checkpointing**: breaks long lineage chains before the pipeline fit and after PCA transforms to avoid recomputation OOM.
-- **Vectorized parquet reader**: uses Arrow for faster columnar I/O since the whole dataset is stored as parquet.
 
