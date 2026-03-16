@@ -46,6 +46,28 @@ The main figures for the project are stored as executed outputs inside the noteb
 - **Figure 6. Model comparison.** The bar chart places the final PCA-based model alongside the MS3 baselines on AUC-ROC and AUC-PR.
 - **Figure 7. Prediction behavior.** These plots show how the final model distributes confidence and where errors concentrate across cold and warm cohorts.
 
+The five MS4 visualizations below were exported from the saved notebook outputs and embedded directly in this report.
+
+### Figure 3. PCA Explained Variance
+
+![PCA explained variance](assets/figures/pca_explained_variance.png)
+
+### Figure 4. PCA Component Loadings
+
+![PCA loadings](assets/figures/pca_loadings.png)
+
+### Figure 5. PCA Two-Dimensional Projection
+
+![PCA 2D projection](assets/figures/pca_2d_projection.png)
+
+### Figure 6. Model Performance Comparison
+
+![Model comparison](assets/figures/model_comparison.png)
+
+### Figure 7. Prediction Analysis
+
+![Prediction analysis](assets/figures/prediction_analysis.png)
+
 ## 3. Methods
 
 This section summarizes the methods in the same order they were carried out during the project.
@@ -243,6 +265,7 @@ There are several limitations worth stating clearly.
 - PCA is unsupervised, so it optimizes for variance retention rather than class separation.
 - Temporal shift remains a real challenge across all models.
 - The report figures live in notebook outputs rather than separate image files in the repository.
+- The MS2 and MS3 visuals are still easiest to view in the notebooks themselves, while the MS4 visuals are now embedded directly in this README.
 
 Overall, the results look believable. They are not too good to trust, they expose meaningful failure modes, and they line up with what we would expect in a recommendation problem driven heavily by short-term engagement.
 
