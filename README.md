@@ -46,7 +46,15 @@ The main figures for the project are stored as executed outputs inside the noteb
 - **Figure 6. Model comparison.** The bar chart places the final PCA-based model alongside the MS3 baselines on AUC-ROC and AUC-PR.
 - **Figure 7. Prediction behavior.** These plots show how the final model distributes confidence and where errors concentrate across cold and warm cohorts.
 
-The five MS4 visualizations below were exported from the saved notebook outputs and embedded directly in this report.
+The two MS3 visualizations and five MS4 visualizations below were exported from the saved notebook outputs and embedded directly in this report. The MS2 exploration visuals are still easiest to view in the notebook because that notebook does not currently contain saved PNG outputs.
+
+### Figure 2A. Model 1 Performance Comparison
+
+![MS3 model comparison](assets/figures/ms3_model_comparison.png)
+
+### Figure 2B. Tuned GBT Feature Importance
+
+![MS3 feature importance](assets/figures/ms3_feature_importance.png)
 
 ### Figure 3. PCA Explained Variance
 
