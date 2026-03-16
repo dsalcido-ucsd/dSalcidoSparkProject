@@ -32,7 +32,7 @@ Key findings:
 | Property | Value |
 |---|---|
 | Source | [https://recsys.eb.dk/dataset/](https://recsys.eb.dk/dataset/) |
-| Bundle used | `ebnerd_large` (6 weeks, Apr 27 – Jun 8, 2023) |
+| Bundle used | `ebnerd_large` (6 weeks, Apr 27 to Jun 8, 2023) |
 | Impression logs | ~37.9M |
 | Users | ~1.1M |
 | Articles | ~125K |
@@ -116,9 +116,9 @@ Spark MLlib Pipeline  (StringIndexer → OHE → Imputer → VectorAssembler →
 
 | Split | Source | Approx. period | Used for |
 |---|---|---|---|
-| train | `train/` parquet, first 80% by time | Apr 27 – ~May 31 | Model fitting |
+| train | `train/` parquet, first 80% by time | Apr 27 to about May 31 | Model fitting |
 | test | `train/` parquet, last 20% by time | Late May | Evaluation |
-| val | `validation/` parquet | Jun 1 – Jun 8 | Final generalization check |
+| val | `validation/` parquet | Jun 1 to Jun 8 | Final generalization check |
 
 ---
 
@@ -175,7 +175,7 @@ All four models sit near the underfitting end of the bias-variance spectrum, wit
 - **GBT tuned**: +0.009 train/test gap, which is healthy; the slow learning rate over 50 rounds keeps the model from memorizing training noise
 - **GBT-PCA**: expected to follow the same pattern; the decorrelated PCA input reduces split redundancy and slightly lowers variance compared to the full-feature GBT
 
-The **test-to-val drop (0.05–0.08 AUC)** across all models is not overfitting. It is temporal distribution shift: the validation set covers June 1–8, about a week after the test period ends. GBT default is hit hardest (−0.085); GBT tuned holds up best (−0.053) because its lower learning rate produces more generalizable splits.
+The **test-to-val drop (0.05 to 0.08 AUC)** across all models is not overfitting. It is temporal distribution shift: the validation set covers June 1 to June 8, about a week after the test period ends. GBT default is hit hardest (-0.085), while GBT tuned holds up best (-0.053) because its lower learning rate produces more generalizable splits.
 
 ---
 
@@ -191,7 +191,7 @@ GBT tuned achieves the best generalization (val AUC-ROC 0.6749). Click predictio
 - Per-user category affinity vectors (instead of scalar history length)
 - Rolling-window training to reduce temporal distribution shift at inference
 
-### Model 2 (MS4 — PCA + GBT)
+### Model 2 (MS4, PCA + GBT)
 
 PCA reveals that the feature space is organized around two interpretable axes: article engagement (PC1) and user engagement depth (PC2). Compressing to 95% explained variance preserves nearly all label signal, and the GBT model trained on those components achieves comparable val AUC to GBT tuned. The decorrelated input also reduces split redundancy in the GBT trees.
 
