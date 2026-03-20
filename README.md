@@ -1,9 +1,5 @@
 # EB-NeRD Click Prediction and Cold-Start Analysis
 
-**DSC 232R: Big Data Technologies with Spark, Final Project**
-
-This repository contains the complete final submission for a large-scale news recommendation project built on the EB-NeRD dataset. The work is organized in three notebooks, but this README presents it as one coherent report. It integrates the exploration work from MS2, the preprocessing and first model family from MS3, and the dimensionality-reduction experiment from MS4 into a single narrative.
-
 ## 1. Introduction to the Project
 
 I chose this project because news recommendation is a practical machine learning problem with clear real-world importance. Every day, digital platforms decide which stories readers see first. A good predictive model can help surface more relevant articles, reduce how often unhelpful content is shown, and improve how quickly timely information reaches the right audience. That makes click prediction a useful case study in both machine learning and modern data systems.
